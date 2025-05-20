@@ -1,0 +1,15 @@
+web_extractor:
+  user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
+  min_line_length: 30
+
+qa_generator:
+  model_name: "gemini-pro"
+  num_default_pairs: 5
+
+fine_tuner:
+  base_model: "facebook/opt-125m"
+  training:
+    num_epochs: 3
+    batch_size: 4
+    learning_rate: 2e-5
+    weight_decay: 0.01
