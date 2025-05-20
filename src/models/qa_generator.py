@@ -1,12 +1,14 @@
 import google.genai as genai
 from typing import List, Dict
 from ..utils.logging_config import setup_logging
-
+from ..utils.api import setup_api
 
 logger = setup_logging(__name__)
 
 class QAGenerator:
     def __init__(self, config: dict):
+        """Initialize QA Generator with configuration."""
+        setup_api()  # Initialize API configuration
         self.model = genai.GenerativeModel(config['qa_generator']['model_name'])
         self.num_default_pairs = config['qa_generator']['num_default_pairs']
     

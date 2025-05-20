@@ -3,7 +3,7 @@ web_extractor:
   min_line_length: 30
 
 qa_generator:
-  model_name: "gemini-pro"
+  model_name: "gemini-2.5-flash-preview-04-17"
   num_default_pairs: 5
 
 fine_tuner:

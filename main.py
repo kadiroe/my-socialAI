@@ -19,8 +19,7 @@ async def main():
     
     # URLs to process
     urls = [
-        "https://example.com/page1",
-        "https://example.com/page2"
+        "https://www.arbeitsagentur.de/",
     ]
     
     try:
