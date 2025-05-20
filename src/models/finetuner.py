@@ -52,7 +52,7 @@ class FineTuner:
         """
         training_args = TrainingArguments(
             output_dir=output_dir,
-            num_train_epochs=num_epochs,
+            num_train_epochs=self.config['training']['num_epochs'],  # Changed from num_epochs,
             per_device_train_batch_size=batch_size,
             learning_rate=learning_rate,
             weight_decay=0.01,

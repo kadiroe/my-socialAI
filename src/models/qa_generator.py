@@ -8,9 +8,12 @@ logger = setup_logging(__name__)
 class QAGenerator:
     def __init__(self, config: dict):
         """Initialize QA Generator with configuration."""
-        setup_api()  # Initialize API configuration
-        self.model = genai.GenerativeModel(config['qa_generator']['model_name'])
+        self.client = setup_api()
+        self.model_name = config['qa_generator']['model_name']
         self.num_default_pairs = config['qa_generator']['num_default_pairs']
+        
+        # Use the client's models interface instead of GenerativeModel
+        self.model = self.client.models
     
     async def generate_qa_pairs(self, context: str, num_pairs: int = None) -> List[Dict[str, str]]:
         """
@@ -27,12 +30,16 @@ class QAGenerator:
         prompt = self._create_prompt(context, num_pairs)
         
         try:
-            response = await self.model.generate_content(prompt)
+            response = self.model.generate_content(
+                model=self.model_name,
+                contents=prompt
+            )
             return self._parse_response(response.text)
         except Exception as e:
             logger.error(f"Error generating QA pairs: {str(e)}")
             return []
-    
+
+
     def _create_prompt(self, context: str, num_pairs: int) -> str:
         return f"""
         Generate {num_pairs} unique question-answer pairs from this context:

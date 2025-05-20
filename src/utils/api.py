@@ -1,15 +1,18 @@
 import os
 from dotenv import load_dotenv
-import google.genai as genai
+from google import genai
 
-def setup_api():
+def setup_api() -> genai.Client:
     """
-    Initialize the Gemini API with credentials from environment variables.
+    Initialize and return the Gemini API client.
+    
+    Returns:
+        genai.Client: Configured Gemini client
     """
-    load_dotenv()  # Load environment variables from .env file
+    load_dotenv()
     
     api_key = os.getenv('GOOGLE_API_KEY')
     if not api_key:
         raise ValueError("GOOGLE_API_KEY not found in environment variables")
     
-    genai.configure(api_key=api_key)
+    return genai.Client(api_key=api_key)
