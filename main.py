@@ -28,23 +28,34 @@ async def main():
         dataset = await dataset_processor.create_dataset_from_urls(urls)
         if not dataset:
             raise ValueError("Failed to create dataset")
+        logger.info(f"Successfully created dataset with {len(dataset)} documents")
         
         # Generate QA pairs
         logger.info("Generating QA pairs...")
         qa_pairs = []
-        for item in dataset:
+        for idx, item in enumerate(dataset, 1):
+            if 'text' not in item:
+                logger.warning(f"Document {idx} missing 'text' field")
+                continue
+                
             pairs = await qa_generator.generate_qa_pairs(item['text'])
-            qa_pairs.extend(pairs)
+            if pairs:
+                qa_pairs.extend(pairs)
+                logger.info(f"Generated {len(pairs)} QA pairs from document {idx}")
         
         if not qa_pairs:
             raise ValueError("No QA pairs generated")
+        logger.info(f"Total QA pairs generated: {len(qa_pairs)}")
         
         # Prepare training dataset
+        logger.info("Preparing training dataset...")
         training_dataset = fine_tuner.prepare_dataset(qa_pairs)
+        logger.info(f"Training dataset prepared with {len(training_dataset)} examples")
         
         # Set up output directory
         output_dir = os.path.join(os.getcwd(), "finetuned_model")
         os.makedirs(output_dir, exist_ok=True)
+        logger.info(f"Created output directory at {output_dir}")
         
         # Start fine-tuning
         logger.info("Starting model fine-tuning...")
@@ -56,7 +67,7 @@ async def main():
         
     except Exception as e:
         logger.error(f"Error in main process: {str(e)}")
-        return
-
+        raise  # Re-raise the exception for debugging
+        
 if __name__ == "__main__":
     asyncio.run(main())
