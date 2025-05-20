@@ -104,4 +104,4 @@ This project is licensed under the MIT License - see the LICENSE file for detail
 ## Contact
 
 Kadir Özer
-Project Link: [https://github.com/KAOEZER/socialAI]
+Project Link: [https://github.com/kadiroe/my-socialAI.git]
