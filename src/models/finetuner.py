@@ -3,10 +3,17 @@ from transformers import (
     AutoTokenizer, 
     TrainingArguments, 
     Trainer,
-    DefaultDataCollator
+    DefaultDataCollator,
+    BitsAndBytesConfig
+)
+from peft import (
+    LoraConfig,
+    get_peft_model,
+    prepare_model_for_kbit_training,
+    TaskType
 )
 from datasets import Dataset
-from typing import List, Dict
+from typing import List, Dict, Optional
 import torch
 import os
 
@@ -14,20 +21,53 @@ class FineTuner:
     def __init__(self, config: dict):
         """Initialize the finetuner with configuration"""
         self.config = config['fine_tuner']
-        self.model = AutoModelForCausalLM.from_pretrained(self.config['base_model'])
+        
+        # Configure quantization for 4-bit training
+        bnb_config = BitsAndBytesConfig(
+            load_in_4bit=True,
+            bnb_4bit_quant_type="nf4",
+            bnb_4bit_compute_dtype=torch.float16,
+            bnb_4bit_use_double_quant=True,
+        )
+        
+        # Load model with quantization config
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.config['base_model'],
+            quantization_config=bnb_config,
+            device_map="auto",
+            trust_remote_code=True
+        )
+        
+        # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(self.config['base_model'])
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
+            
+        # Prepare model for k-bit training
+        self.model = prepare_model_for_kbit_training(self.model)
+        
+        # Configure LoRA
+        lora_config = LoraConfig(
+            r=self.config['lora']['r'],
+            lora_alpha=self.config['lora']['lora_alpha'],
+            target_modules=self.config['lora']['target_modules'],
+            lora_dropout=self.config['lora']['lora_dropout'],
+            bias=self.config['lora']['bias'],
+            task_type=TaskType.CAUSAL_LM,
+        )
+        
+        # Apply LoRA config to model
+        self.model = get_peft_model(self.model, lora_config)
         
         # Create data collator
         self.data_collator = DefaultDataCollator()
-
 
     def prepare_dataset(self, qa_pairs: List[Dict[str, str]]) -> Dataset:
         """Convert QA pairs into a dataset for training"""
         formatted_data = []
         for pair in qa_pairs:
-            text = f"Question: {pair['question']}\nAnswer: {pair['answer']}"
+            # Format as instruction following TinyLlama-Chat template
+            text = f"<|system|>You are a helpful assistant that provides accurate and relevant answers.</s><|user|>{pair['question']}</s><|assistant|>{pair['answer']}</s>"
             formatted_data.append({"text": text})
         
         dataset = Dataset.from_list(formatted_data)
@@ -45,11 +85,10 @@ class FineTuner:
             # Create labels (same as input_ids for causal language modeling)
             labels = tokenized["input_ids"].clone()
             
-            # Return dictionary with all required keys
             return {
                 "input_ids": tokenized["input_ids"],
                 "attention_mask": tokenized["attention_mask"],
-                "labels": labels  # Add labels for loss computation
+                "labels": labels
             }
         
         # Process dataset
@@ -59,9 +98,7 @@ class FineTuner:
             remove_columns=dataset.column_names
         )
         
-        # Set format for PyTorch
         tokenized_dataset.set_format(type="torch")
-        
         return tokenized_dataset
 
     def train(self, dataset: Dataset, output_dir: str) -> None:
@@ -70,12 +107,18 @@ class FineTuner:
             output_dir=output_dir,
             num_train_epochs=float(self.config['training']['num_train_epochs']),
             per_device_train_batch_size=int(self.config['training']['per_device_train_batch_size']),
+            gradient_accumulation_steps=4,  # Effective batch size = 4 * batch_size
             learning_rate=float(self.config['training']['learning_rate']),
             weight_decay=float(self.config['training']['weight_decay']),
-            save_strategy="epoch",
-            logging_dir=os.path.join(output_dir, "logs"),
+            max_grad_norm=float(self.config['training']['max_grad_norm']),
+            warmup_ratio=float(self.config['training']['warmup_ratio']),
+            lr_scheduler_type=self.config['training']['lr_scheduler_type'],
+            save_strategy="steps",
+            save_steps=50,
+            logging_steps=10,
+            optim="paged_adamw_32bit",
+            fp16=True,
             remove_unused_columns=False,
-            # Disable pin memory since no GPU is available
             dataloader_pin_memory=False
         )
     
@@ -83,9 +126,35 @@ class FineTuner:
             model=self.model,
             args=training_args,
             train_dataset=dataset,
-            data_collator=self.data_collator,  # Use data collator instead of tokenizer
+            data_collator=self.data_collator,
         )
     
         trainer.train()
-        trainer.save_model()
+        
+        # Save trained model and tokenizer
+        self.model.save_pretrained(output_dir)
         self.tokenizer.save_pretrained(output_dir)
+        
+    def generate_response(self, question: str, max_length: int = 512) -> str:
+        """Generate a response using the fine-tuned model"""
+        prompt = f"<|system|>You are a helpful assistant that provides accurate and relevant answers.</s><|user|>{question}</s><|assistant|>"
+        
+        inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
+        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        
+        with torch.no_grad():
+            outputs = self.model.generate(
+                **inputs,
+                max_length=max_length,
+                num_beams=4,
+                temperature=0.7,
+                top_p=0.9,
+                repetition_penalty=1.2,
+                pad_token_id=self.tokenizer.pad_token_id,
+                eos_token_id=self.tokenizer.convert_tokens_to_ids("</s>")
+            )
+        
+        response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
+        # Extract only the assistant's response
+        response = response.split("<|assistant|>")[-1].strip()
+        return response

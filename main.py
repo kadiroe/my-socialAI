@@ -65,6 +65,19 @@ async def main():
         )
         logger.info(f"Model fine-tuned and saved to {output_dir}")
         
+        # Test the model with some example questions
+        logger.info("Testing the fine-tuned model...")
+        test_questions = [
+            "What services does the Arbeitsagentur offer?",
+            "How can I register as unemployed?",
+            "What documents do I need for job seeking?"
+        ]
+        
+        for question in test_questions:
+            logger.info(f"\nQuestion: {question}")
+            response = fine_tuner.generate_response(question)
+            logger.info(f"Response: {response}\n")
+        
     except Exception as e:
         logger.error(f"Error in main process: {str(e)}")
         raise  # Re-raise the exception for debugging
