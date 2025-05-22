@@ -8,7 +8,6 @@ from transformers import (
 from peft import (
     LoraConfig,
     get_peft_model,
-    prepare_model_for_kbit_training,
     TaskType
 )
 from datasets import Dataset
@@ -22,21 +21,15 @@ class FineTuner:
         self.config = config['fine_tuner']
         
         # Load model with CPU configuration
-        try:
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.config['base_model'],
-                torch_dtype=torch.float32,  # Use standard precision for CPU
-                device_map='auto',
-                low_cpu_mem_usage=True,
-                trust_remote_code=True
-            )
-        except Exception as e:
-            # If loading fails, try without device_map
-            self.model = AutoModelForCausalLM.from_pretrained(
-                self.config['base_model'],
-                torch_dtype=torch.float32,
-                trust_remote_code=True
-            )
+        self.model = AutoModelForCausalLM.from_pretrained(
+            self.config['base_model'],
+            torch_dtype=torch.float32,
+            low_cpu_mem_usage=True,
+            trust_remote_code=True
+        )
+        
+        # Move model to CPU explicitly
+        self.model = self.model.to('cpu')
         
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(self.config['base_model'])
@@ -108,11 +101,14 @@ class FineTuner:
             warmup_ratio=float(self.config['training']['warmup_ratio']),
             lr_scheduler_type=self.config['training']['lr_scheduler_type'],
             save_strategy="steps",
-            save_steps=25,  # Save more frequently
+            save_steps=25,
             logging_steps=5,
-            optim="adamw_torch",  # Use standard optimizer
+            optim="adamw_torch",
             remove_unused_columns=False,
-            dataloader_pin_memory=False
+            dataloader_pin_memory=False,
+            # Force CPU training
+            no_cuda=True,
+            use_cpu=True
         )
     
         trainer = Trainer(
@@ -133,7 +129,8 @@ class FineTuner:
         prompt = f"<|system|>You are a helpful assistant that provides accurate and relevant answers.</s><|user|>{question}</s><|assistant|>"
         
         inputs = self.tokenizer(prompt, return_tensors="pt", add_special_tokens=False)
-        inputs = {k: v.to(self.model.device) for k, v in inputs.items()}
+        # Ensure inputs are on CPU
+        inputs = {k: v.to('cpu') for k, v in inputs.items()}
         
         with torch.no_grad():
             outputs = self.model.generate(
