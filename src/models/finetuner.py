@@ -3,8 +3,7 @@ from transformers import (
     AutoTokenizer, 
     TrainingArguments, 
     Trainer,
-    DefaultDataCollator,
-    BitsAndBytesConfig
+    DefaultDataCollator
 )
 from peft import (
     LoraConfig,
@@ -22,30 +21,28 @@ class FineTuner:
         """Initialize the finetuner with configuration"""
         self.config = config['fine_tuner']
         
-        # Configure quantization for 4-bit training
-        bnb_config = BitsAndBytesConfig(
-            load_in_4bit=True,
-            bnb_4bit_quant_type="nf4",
-            bnb_4bit_compute_dtype=torch.float16,
-            bnb_4bit_use_double_quant=True,
-        )
-        
-        # Load model with quantization config
-        self.model = AutoModelForCausalLM.from_pretrained(
-            self.config['base_model'],
-            quantization_config=bnb_config,
-            device_map="auto",
-            trust_remote_code=True
-        )
+        # Load model with CPU configuration
+        try:
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.config['base_model'],
+                torch_dtype=torch.float32,  # Use standard precision for CPU
+                device_map='auto',
+                low_cpu_mem_usage=True,
+                trust_remote_code=True
+            )
+        except Exception as e:
+            # If loading fails, try without device_map
+            self.model = AutoModelForCausalLM.from_pretrained(
+                self.config['base_model'],
+                torch_dtype=torch.float32,
+                trust_remote_code=True
+            )
         
         # Load tokenizer
         self.tokenizer = AutoTokenizer.from_pretrained(self.config['base_model'])
         if self.tokenizer.pad_token is None:
             self.tokenizer.pad_token = self.tokenizer.eos_token
             
-        # Prepare model for k-bit training
-        self.model = prepare_model_for_kbit_training(self.model)
-        
         # Configure LoRA
         lora_config = LoraConfig(
             r=self.config['lora']['r'],
@@ -73,25 +70,22 @@ class FineTuner:
         dataset = Dataset.from_list(formatted_data)
         
         def tokenize_and_format(examples):
-            # Tokenize inputs
+            # Tokenize inputs with smaller max_length for CPU memory constraints
             tokenized = self.tokenizer(
                 examples["text"],
                 padding="max_length",
                 truncation=True,
-                max_length=512,
+                max_length=256,  # Reduced from 512 for CPU memory
                 return_tensors="pt"
             )
             
-            # Create labels (same as input_ids for causal language modeling)
             labels = tokenized["input_ids"].clone()
-            
             return {
                 "input_ids": tokenized["input_ids"],
                 "attention_mask": tokenized["attention_mask"],
                 "labels": labels
             }
         
-        # Process dataset
         tokenized_dataset = dataset.map(
             tokenize_and_format,
             batched=True,
@@ -106,18 +100,17 @@ class FineTuner:
         training_args = TrainingArguments(
             output_dir=output_dir,
             num_train_epochs=float(self.config['training']['num_train_epochs']),
-            per_device_train_batch_size=int(self.config['training']['per_device_train_batch_size']),
-            gradient_accumulation_steps=4,  # Effective batch size = 4 * batch_size
+            per_device_train_batch_size=2,  # Reduced batch size for CPU
+            gradient_accumulation_steps=8,  # Increased for effective batch size
             learning_rate=float(self.config['training']['learning_rate']),
             weight_decay=float(self.config['training']['weight_decay']),
             max_grad_norm=float(self.config['training']['max_grad_norm']),
             warmup_ratio=float(self.config['training']['warmup_ratio']),
             lr_scheduler_type=self.config['training']['lr_scheduler_type'],
             save_strategy="steps",
-            save_steps=50,
-            logging_steps=10,
-            optim="paged_adamw_32bit",
-            fp16=True,
+            save_steps=25,  # Save more frequently
+            logging_steps=5,
+            optim="adamw_torch",  # Use standard optimizer
             remove_unused_columns=False,
             dataloader_pin_memory=False
         )
@@ -135,7 +128,7 @@ class FineTuner:
         self.model.save_pretrained(output_dir)
         self.tokenizer.save_pretrained(output_dir)
         
-    def generate_response(self, question: str, max_length: int = 512) -> str:
+    def generate_response(self, question: str, max_length: int = 256) -> str:
         """Generate a response using the fine-tuned model"""
         prompt = f"<|system|>You are a helpful assistant that provides accurate and relevant answers.</s><|user|>{question}</s><|assistant|>"
         
@@ -146,7 +139,7 @@ class FineTuner:
             outputs = self.model.generate(
                 **inputs,
                 max_length=max_length,
-                num_beams=4,
+                num_beams=2,  # Reduced for CPU
                 temperature=0.7,
                 top_p=0.9,
                 repetition_penalty=1.2,
@@ -155,6 +148,5 @@ class FineTuner:
             )
         
         response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-        # Extract only the assistant's response
         response = response.split("<|assistant|>")[-1].strip()
         return response
