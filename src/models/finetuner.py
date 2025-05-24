@@ -17,6 +17,7 @@ from typing import List, Dict, Optional
 import torch
 import os
 import gc
+import numpy as np
 
 class FineTuner:
     def __init__(self, config: dict):
@@ -116,7 +117,8 @@ class FineTuner:
                     max_length=128,
                 )
             
-            model_inputs["labels"] = labels["input_ids"]
+            # Convert to numpy array first to prevent the slow tensor creation warning
+            model_inputs["labels"] = np.array(labels["input_ids"])
             return model_inputs
         
         tokenized_dataset = dataset.map(
@@ -166,7 +168,8 @@ class FineTuner:
                 gradient_checkpointing=True,
                 # Basic optimizations that should work across versions
                 fp16=False,  # Disable mixed precision on CPU
-                group_by_length=True  # Reduce padding by grouping similar lengths
+                group_by_length=True,  # Reduce padding by grouping similar lengths
+                dataloader_pin_memory=False  # Disable pin_memory since we're on CPU
             )
 
             # Initialize trainer with improved error handling
