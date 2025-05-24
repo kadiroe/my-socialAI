@@ -100,25 +100,29 @@ class FineTuner:
         dataset = Dataset.from_list(formatted_data)
         
         def tokenize_function(examples):
-            # Tokenize inputs
+            # Tokenize inputs with padding
             model_inputs = self.tokenizer(
                 examples["input_text"],
-                padding=False,  # We'll handle padding in the data collator
+                padding="max_length",  # Changed to max_length padding
                 truncation=True,
                 max_length=128,
+                return_tensors=None,  # Return lists instead of tensors
             )
             
-            # Tokenize targets
+            # Tokenize targets with padding
             with torch.no_grad():
                 labels = self.tokenizer(
                     examples["target_text"],
-                    padding=False,
+                    padding="max_length",  # Changed to max_length padding
                     truncation=True,
                     max_length=128,
+                    return_tensors=None,  # Return lists instead of tensors
                 )
             
-            # Convert to numpy array first to prevent the slow tensor creation warning
-            model_inputs["labels"] = np.array(labels["input_ids"])
+            # Convert to numpy array after ensuring consistent lengths
+            model_inputs["labels"] = np.array(labels["input_ids"], dtype=np.int64)
+            model_inputs["input_ids"] = np.array(model_inputs["input_ids"], dtype=np.int64)
+            model_inputs["attention_mask"] = np.array(model_inputs["attention_mask"], dtype=np.int64)
             return model_inputs
         
         tokenized_dataset = dataset.map(
