@@ -1,27 +1,32 @@
 web_extractor:
   user_agent: "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
   min_line_length: 30
+  crawling:
+    max_depth: 2  # How deep to crawl
+    max_pages_per_domain: 10  # Maximum pages to crawl per domain
+    include_subdomains: true  # Whether to crawl subdomains
+    timeout: 30  # Timeout in seconds for each request
+    concurrent_requests: 3  # Number of concurrent requests
 
 qa_generator:
   model_name: "gemini-2.5-flash-preview-04-17"
-  num_default_pairs: 500
+  num_default_pairs: 5
 
 fine_tuner:
-  base_model: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+  base_model: "google/flan-t5-small"
   training:
-    num_train_epochs: 10.0
-    per_device_train_batch_size: 4
-    learning_rate: 2.0e-4
+    num_train_epochs: 3.0
+    per_device_train_batch_size: 2
+    learning_rate: 1.0e-4
     weight_decay: 0.01
     max_grad_norm: 0.3
     warmup_ratio: 0.03
     lr_scheduler_type: "cosine"
     dataloader_pin_memory: false
   lora:
-    r: 8
-    lora_alpha: 32
+    r: 4
+    lora_alpha: 16
     lora_dropout: 0.1
-    target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    target_modules: ["q", "v"]  # T5 has simpler attention modules
     bias: "none"
-    inference_mode: false
-    task_type: "CAUSAL_LM"
+    task_type: "SEQ_2_SEQ_LM"  # Changed for T5 model type
