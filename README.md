@@ -1,13 +1,13 @@
 # SocialAI
 
-An AI-powered tool for generating and fine-tuning question-answer pairs from web content using Gemini API and TinyLlama. This project uses LoRA (Low-Rank Adaptation) for efficient fine-tuning and is optimized for CPU usage.
+An AI-powered tool for generating and fine-tuning question-answer pairs from web content using Gemini API and FLAN-T5. This project uses LoRA (Low-Rank Adaptation) for efficient fine-tuning and is optimized for CPU usage.
 
 ## Features
 
-- Web content extraction and processing from URLs
+- Web content extraction with subdomain crawling capabilities
 - Automated QA pair generation using Google's Gemini API
-- Efficient model fine-tuning using LoRA
-- CPU-optimized training with TinyLlama-1.1B-Chat
+- Memory-efficient model fine-tuning using LoRA
+- CPU-optimized training with FLAN-T5-small
 - Memory-efficient training (works with <2GB RAM)
 - Configurable data processing pipeline
 - Comprehensive logging and error handling
@@ -53,29 +53,34 @@ GOOGLE_API_KEY=your_gemini_api_key_here
 web_extractor:
   user_agent: "Mozilla/5.0..."
   min_line_length: 30
+  crawling:
+    max_depth: 2  # How deep to crawl
+    max_pages_per_domain: 10  # Maximum pages to crawl per domain
+    include_subdomains: true  # Whether to crawl subdomains
+    timeout: 30  # Timeout in seconds for each request
+    concurrent_requests: 3  # Number of concurrent requests
 
 qa_generator:
   model_name: "gemini-2.5-flash-preview-04-17"
   num_default_pairs: 5
 
 fine_tuner:
-  base_model: "TinyLlama/TinyLlama-1.1B-Chat-v1.0"
+  base_model: "google/flan-t5-small"  # Changed to T5 for better CPU performance
   training:
-    num_train_epochs: 3.0
-    per_device_train_batch_size: 2
-    learning_rate: 2.0e-4
-    weight_decay: 0.01
-    max_grad_norm: 0.3
-    warmup_ratio: 0.03
+    num_train_epochs: 5.0
+    per_device_train_batch_size: 4
+    learning_rate: 5.0e-5
+    weight_decay: 0.05
+    max_grad_norm: 1.0
+    warmup_ratio: 0.1
     lr_scheduler_type: "cosine"
-    dataloader_pin_memory: false
   lora:
     r: 8
     lora_alpha: 32
-    lora_dropout: 0.1
-    target_modules: ["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"]
+    lora_dropout: 0.05
+    target_modules: ["q", "k", "v", "o"]  # T5 attention components
     bias: "none"
-    task_type: "CAUSAL_LM"
+    task_type: "SEQ_2_SEQ_LM"
 ```
 
 ## Usage
@@ -86,9 +91,9 @@ python main.py
 ```
 
 The script will:
-1. Extract content from specified URLs
+1. Extract content from specified URLs with subdomain crawling
 2. Generate QA pairs using Gemini API
-3. Fine-tune TinyLlama model using LoRA
+3. Fine-tune FLAN-T5-small model using LoRA
 4. Save the fine-tuned model
 5. Run inference with example questions
 
@@ -96,9 +101,32 @@ The script will:
 
 ```
 socialAI/
+├── config/          # Configuration files
 ├── src/
-│   ├── data/          # Data processing and web extraction
-│   ├── models/        # QA generation and fine-tuning
+│   ├── data/       # Data processing and web extraction
+│   ├── models/     # QA generation and fine-tuning
+│   └── utils/      # Helper utilities
+├── tests/          # Test files
+└── main.py         # Main execution script
+```
+
+## Model Details
+
+The project uses FLAN-T5-small as the base model with LoRA fine-tuning for several reasons:
+- Better performance on CPU compared to decoder-only models
+- Smaller memory footprint while maintaining good quality
+- Efficient fine-tuning with LoRA adaptation
+- Strong performance on question-answering tasks
+
+## Limitations
+
+- CPU-only training can be slower than GPU-based training
+- Response generation quality depends on the quality of training data
+- Limited by the context window of FLAN-T5-small (512 tokens)
+
+## Contributing
+
+Contributions are welcome! Please feel free to submit a Pull Request.
 │   └── utils/         # Logging and API utilities
 ├── tests/             # Unit tests
 ├── config/            # Configuration files
