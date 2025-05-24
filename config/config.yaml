@@ -10,23 +10,23 @@ web_extractor:
 
 qa_generator:
   model_name: "gemini-2.5-flash-preview-04-17"
-  num_default_pairs: 5
+  num_default_pairs: 50
 
 fine_tuner:
   base_model: "google/flan-t5-small"
   training:
-    num_train_epochs: 3.0
-    per_device_train_batch_size: 2
-    learning_rate: 1.0e-4
-    weight_decay: 0.01
-    max_grad_norm: 0.3
-    warmup_ratio: 0.03
+    num_train_epochs: 50.0  # Increased for better convergence
+    per_device_train_batch_size: 4  # Increased as T5-small can handle it
+    learning_rate: 5.0e-5  # Reduced for more stable training
+    weight_decay: 0.05  # Increased for better regularization
+    max_grad_norm: 1.0  # Increased to avoid too aggressive clipping
+    warmup_ratio: 0.1  # Increased for more stable initial training
     lr_scheduler_type: "cosine"
     dataloader_pin_memory: false
   lora:
-    r: 4
-    lora_alpha: 16
-    lora_dropout: 0.1
-    target_modules: ["q", "v"]  # T5 has simpler attention modules
+    r: 8  # Increased for better expressiveness
+    lora_alpha: 32  # Increased for stronger adaptation
+    lora_dropout: 0.05  # Reduced to prevent overfitting
+    target_modules: ["q", "k", "v", "o"]  # Added more attention components
     bias: "none"
-    task_type: "SEQ_2_SEQ_LM"  # Changed for T5 model type
+    task_type: "SEQ_2_SEQ_LM"
