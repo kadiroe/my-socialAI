@@ -14,24 +14,23 @@ def test_config():
             'num_default_pairs': 2
         },
         'fine_tuner': {
-            'base_model': 'TinyLlama/TinyLlama-1.1B-Chat-v1.0',
+            'base_model': 'google/flan-t5-small',
             'training': {
-                'num_train_epochs': 1.0,
-                'per_device_train_batch_size': 2,
-                'learning_rate': 2.0e-4,
-                'weight_decay': 0.01,
-                'max_grad_norm': 0.3,
-                'warmup_ratio': 0.03,
-                'lr_scheduler_type': 'cosine',
-                'dataloader_pin_memory': False
+                'num_train_epochs': 1.0,  # Reduced for testing
+                'per_device_train_batch_size': 4,
+                'learning_rate': 5.0e-5,
+                'weight_decay': 0.05,
+                'max_grad_norm': 1.0,
+                'warmup_ratio': 0.1,
+                'lr_scheduler_type': 'cosine'
             },
             'lora': {
                 'r': 8,
                 'lora_alpha': 32,
-                'lora_dropout': 0.1,
-                'target_modules': ['q_proj', 'k_proj', 'v_proj', 'o_proj', 'gate_proj', 'up_proj', 'down_proj'],
+                'lora_dropout': 0.05,
+                'target_modules': ['q', 'k', 'v', 'o'],
                 'bias': 'none',
-                'task_type': 'CAUSAL_LM'
+                'task_type': 'SEQ_2_SEQ_LM'
             }
         }
     }

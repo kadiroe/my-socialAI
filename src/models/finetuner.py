@@ -65,8 +65,26 @@ class FineTuner:
         # Apply LoRA and prepare for training
         self.model = get_peft_model(self.model, lora_config)
         
-        # Create data collator
-        self.data_collator = DataCollatorForSeq2Seq(
+        # Create custom data collator for better performance
+        class OptimizedDataCollator(DataCollatorForSeq2Seq):
+            def __call__(self, features, return_tensors=None):
+                # Pre-convert lists to numpy arrays
+                if features and "labels" in features[0]:
+                    labels = np.array([f["labels"] for f in features], dtype=np.int64)
+                    input_ids = np.array([f["input_ids"] for f in features], dtype=np.int64)
+                    attention_mask = np.array([f["attention_mask"] for f in features], dtype=np.int64)
+                    
+                    # Convert numpy arrays to tensors
+                    batch = {
+                        "input_ids": torch.from_numpy(input_ids),
+                        "attention_mask": torch.from_numpy(attention_mask),
+                        "labels": torch.from_numpy(labels)
+                    }
+                    return batch
+                return super().__call__(features, return_tensors)
+        
+        # Initialize optimized data collator
+        self.data_collator = OptimizedDataCollator(
             tokenizer=self.tokenizer,
             model=self.model,
             padding="longest",
@@ -82,6 +100,9 @@ class FineTuner:
             if param.requires_grad:
                 trainable_params += param.numel()
         print(f"trainable params: {trainable_params} || all params: {all_param} || trainable%: {100 * trainable_params / all_param}")
+        
+        # Initialize trainer as None
+        self.trainer = None
         
         # Clear memory
         gc.collect()
@@ -177,7 +198,7 @@ class FineTuner:
             )
 
             # Initialize trainer with improved error handling
-            trainer = Trainer(
+            self.trainer = Trainer(
                 model=self.model,
                 args=training_args,
                 train_dataset=dataset,
@@ -186,17 +207,17 @@ class FineTuner:
             
             # Add training hooks for better monitoring using a proper callback class
             class TrainingCallback(TrainerCallback):
-                def on_log(self, args, state, control, logs=None, **kwargs):
+                def on_log(self, args, state, control, logs=None):
                     if logs and 'loss' in logs:
                         current_loss = logs['loss']
-                        if current_loss > 100 or torch.isnan(torch.tensor(current_loss)):
+                        if current_loss > 100 or (isinstance(current_loss, (int, float)) and torch.isnan(torch.tensor(current_loss))):
                             print(f"Warning: High loss detected ({current_loss}). Training may be unstable.")
             
-            trainer.add_callback(TrainingCallback())
+            self.trainer.add_callback(TrainingCallback())
             
             # Train the model with error handling
             try:
-                trainer.train()
+                self.trainer.train()
             except Exception as e:
                 print(f"Training error occurred: {str(e)}")
                 if "CUDA out of memory" in str(e):
@@ -206,7 +227,7 @@ class FineTuner:
                 raise
             
             # Save the final model
-            trainer.save_model(output_dir)
+            self.trainer.save_model(output_dir)
             self.tokenizer.save_pretrained(output_dir)
             
             # Clear memory after training
@@ -227,6 +248,10 @@ class FineTuner:
             # Prepare model for inference
             self.model.eval()
             
+            # Check for empty input
+            if not question.strip():
+                return "I apologize, but I cannot generate a proper response at this moment."
+                
             # Format input with better prompt template
             input_text = f"Answer the following question clearly and thoroughly: {question}"
             inputs = self.tokenizer(

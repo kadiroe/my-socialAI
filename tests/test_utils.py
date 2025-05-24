@@ -21,6 +21,8 @@ def test_setup_api():
     assert client is not None
     
 def test_setup_api_missing_key(monkeypatch):
+    # Mock load_dotenv to do nothing
+    monkeypatch.setattr('src.utils.api.load_dotenv', lambda: None)
     # Remove API key from environment
     monkeypatch.delenv('GOOGLE_API_KEY', raising=False)
     
